@@ -1,0 +1,23 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Generate protobuf code and build the server and client
+    deps: [proto, build-server, build-client]
+
+  proto:
+    desc: Generate Go code from the protobuf definitions
+    cmds:
+      - protoc --proto_path=proto --go_out=gen/etasks --go_opt=paths=source_relative --go-grpc_out=gen/etasks --go-grpc_opt=paths=source_relative proto/etasks.proto
+
+  build-server:
+    desc: Build the task manager server
+    deps: [proto]
+    cmds:
+      - go build ./server
+
+  build-client:
+    desc: Build the task manager client
+    deps: [proto]
+    cmds:
+      - go build ./client

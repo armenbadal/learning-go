@@ -1,1 +1,4 @@
 *.sum
+*.pb.go
+
+*.exe

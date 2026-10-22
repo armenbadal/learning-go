@@ -36,13 +36,13 @@ enum TaskEventType {
     TASK_EVENT_TYPE_DELETED = 3;
 }
 
-message TaskeEvent {
+message TaskEvent {
     TaskEventType type = 1;
     string taskId = 2;
     google.protobuf.Timestamp timestamp = 3;
 }
 
-message SubscribeReques {
+message SubscribeRequest {
     string name = 1;
 }
 
@@ -52,7 +52,7 @@ service TaskManager {
     rpc ListTasks(google.protobuf.Empty) returns (TaskListResponse);
     rpc CompleteTask(TaskIDRequest) returns (google.protobuf.Empty);
     rpc DeleteTask(TaskIDRequest) returns (google.protobuf.Empty);
-    rpc WatchTaskEvents(SubscriberReques) retruns (stream TaskEvent);
+    rpc WatchTaskEvents(SubscribeRequest) returns (stream TaskEvent);
 }
 
 
