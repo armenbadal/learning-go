@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+option go_package = "etm/gen/etasks";
+
+import "google/protobuf/empty.proto";
+
+message CreateTaskRequest {
+    string title = 1;
+    string description = 2;
+}
+
+message TaskIDRequest {
+    string id = 1;
+}
+
+message TaskResponse {
+    string id = 1;
+    string title = 2;
+    string description = 3;
+    bool completed = 4;
+}
+
+message TaskIDResponse {
+    string id = 1;
+}
+
+message TaskListResponse {
+    repeated TaskResponse tasks = 1;
+}
+
+service TaskManager {
+    rpc CreateTask(CreateTaskRequest) returns (TaskIDResponse);
+    rpc GetTask(TaskIDRequest) returns (TaskResponse);
+    rpc ListTasks(google.protobuf.Empty) returns (TaskListResponse);
+    rpc CompleteTask(TaskIDRequest) returns (google.protobuf.Empty);
+    rpc DeleteTask(TaskIDRequest) returns (google.protobuf.Empty);
+}
+
+
+/*
+protoc --proto_path=proto --go_out=./gen/etasks --go_opt=paths=source_relative --go-grpc_out=./gen/etasks --go-grpc_opt=paths=source_relative etasks.proto
+*/
