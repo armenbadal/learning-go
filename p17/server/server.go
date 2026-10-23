@@ -222,6 +222,20 @@ func (tm *TaskManager) DeleteTask(ctx context.Context, in *pb.TaskIDRequest) (*e
 	return &emptypb.Empty{}, nil
 }
 
+func (tm *TaskManager) WatchTaskEvents(req *pb.SubscribeRequest, stream pb.TaskManager_WatchTaskEventsServer) error {
+	clientName := req.GetName()
+	log.Printf("Client '%s' requested connection", clientName)
+
+	// TODO add name to the list
+
+	defer func() {
+		// TODO remove name from the list
+	}()
+
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
 func main() {
 	listener, err := net.Listen("tcp", ":50051")
 	if err != nil {

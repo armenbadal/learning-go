@@ -1,11 +1,13 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"strings"
 	"time"
 
@@ -13,7 +15,42 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+type command struct {
+	action    string
+	arguments []string
+}
+
+func parseCommand(text string) (*command, error) {
+	parts := strings.Fields(text)
+	if len(parts) == 0 {
+		return nil, fmt.Errorf("invalid command: %q", text)
+	}
+
+	switch parts[0] {
+	case "CREATE":
+		if len(parts) < 3 {
+			break
+		}
+		return &command{
+			action:    "CREATE",
+			arguments: []string{parts[1], strings.Join(parts[2:], " ")},
+		}, nil
+	case "GET", "COMPLETE", "DELETE":
+		if len(parts) != 2 {
+			break
+		}
+		return &command{action: parts[0], arguments: parts[1:]}, nil
+	case "LIST":
+		if len(parts) == 1 {
+			return &command{action: "LIST"}, nil
+		}
+	}
+
+	return nil, fmt.Errorf("invalid command: %q", text)
+}
 
 func main() {
 	name := flag.String("name", "", "client name")
@@ -39,7 +76,7 @@ func main() {
 	}
 	stream, err := client.WatchTaskEvents(ctxWatch, subscriptionRequest)
 	if err != nil {
-		log.Fatalf("cannod subscribe: %v", err)
+		log.Fatalf("cannot subscribe: %v", err)
 	}
 	log.Println("Subscribed.")
 
@@ -58,51 +95,71 @@ func main() {
 		}
 	}()
 
-	_, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-
+	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		var command string
-		fmt.Scanf("%s", &command)
-		if command == "exit" {
+		fmt.Print("> ")
+		if !scanner.Scan() {
 			break
 		}
-		fmt.Printf(">> %s\n", command)
+		text := scanner.Text()
+		if text == "exit" {
+			break
+		}
+
+		cm, err := parseCommand(text)
+		if err != nil {
+			log.Printf("Invalid command: %v\n", err)
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		switch cm.action {
+		case "CREATE":
+			rq := &pb.CreateTaskRequest{
+				Title:       cm.arguments[0],
+				Description: cm.arguments[1],
+			}
+			r, err := client.CreateTask(ctx, rq)
+			if err != nil {
+				log.Printf("CreateTask failed: %v", err)
+				break
+			}
+			log.Printf("Task created with ID: %s", r.GetId())
+		case "GET":
+			rq := &pb.TaskIDRequest{Id: cm.arguments[0]}
+			r, err := client.GetTask(ctx, rq)
+			if err != nil {
+				log.Printf("GetTask failed: %v", err)
+				break
+			}
+			log.Printf("Task: <%s, %s, %s, %t>", r.GetId(), r.GetTitle(), r.GetDescription(), r.GetCompleted())
+		case "LIST":
+			r, err := client.ListTasks(ctx, &emptypb.Empty{})
+			if err != nil {
+				log.Printf("ListTasks failed: %v", err)
+				break
+			}
+			for _, task := range r.GetTasks() {
+				log.Printf("Task: <%s, %s, %s, %t>", task.GetId(), task.GetTitle(), task.GetDescription(), task.GetCompleted())
+			}
+		case "COMPLETE":
+			rq := &pb.TaskIDRequest{Id: cm.arguments[0]}
+			if _, err := client.CompleteTask(ctx, rq); err != nil {
+				log.Printf("CompleteTask failed: %v", err)
+				break
+			}
+			log.Printf("Task %s completed", cm.arguments[0])
+		case "DELETE":
+			rq := &pb.TaskIDRequest{Id: cm.arguments[0]}
+			if _, err := client.DeleteTask(ctx, rq); err != nil {
+				log.Printf("DeleteTask failed: %v", err)
+				break
+			}
+			log.Printf("Task %s deleted", cm.arguments[0])
+		}
+		cancel()
 	}
-	// - - - -
-
-	// rq := &pb.CreateTaskRequest{
-	// 	Title:       "First",
-	// 	Description: "My first task",
-	// }
-	// r, err := client.CreateTask(ctx, rq)
-	// if err != nil {
-	// 	log.Fatalf("CreateTask failed")
-	// }
-	// log.Printf("Task created with ID: %s", r.GetId())
-
-	// rq = &pb.CreateTaskRequest{
-	// 	Title:       "Second",
-	// 	Description: "My second task",
-	// }
-	// r, err = client.CreateTask(ctx, rq)
-	// if err != nil {
-	// 	log.Fatalf("CreateTask failed")
-	// }
-	// log.Printf("Task created with ID: %s", r.GetId())
-
-	// r2, err := client.GetTask(ctx, &pb.TaskIDRequest{Id: "TASK2"})
-	// if err != nil {
-	// 	log.Fatalf("Failed to get task: %v", err)
-	// }
-	// log.Printf("Task: <%s, %s, %s, %t>\n", r2.GetId(), r2.GetTitle(), r2.GetDescription(), r2.GetCompleted())
-
-	// r3, err := client.ListTasks(ctx, &emptypb.Empty{})
-	// if err != nil {
-	// 	log.Fatalf("Failed to get the list of tasks: %v", err)
-	// }
-
-	// for _, task := range r3.Tasks {
-	// 	log.Printf("Task: <%s, %s, %s, %t>\n", task.GetId(), task.GetTitle(), task.GetDescription(), task.GetCompleted())
-	// }
+	if err := scanner.Err(); err != nil {
+		log.Printf("failed to read command: %v", err)
+	}
 }
