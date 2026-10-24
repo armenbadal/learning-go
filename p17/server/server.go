@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 var (
@@ -118,8 +119,44 @@ func (t *TaskService) Delete(id string) error {
 // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 type TaskManager struct {
-	service *TaskService
+	service    *TaskService
+	clients    sync.Map
+	taskEvents chan *pb.TaskEvent
 	pb.UnimplementedTaskManagerServer
+}
+
+const subscriberQueueSize = 10
+
+type taskEventSubscriber struct {
+	mu      sync.Mutex
+	events  chan *pb.TaskEvent
+	done    chan struct{}
+	stopped bool
+}
+
+func newTaskEventSubscriber() *taskEventSubscriber {
+	return &taskEventSubscriber{
+		events: make(chan *pb.TaskEvent, subscriberQueueSize),
+		done:   make(chan struct{}),
+	}
+}
+
+func (s *taskEventSubscriber) enqueue(event *pb.TaskEvent) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.stopped {
+		return false
+	}
+
+	select {
+	case s.events <- event:
+		return true
+	default:
+		s.stopped = true
+		close(s.done)
+		return false
+	}
 }
 
 func (tm *TaskManager) CreateTask(ctx context.Context, rq *pb.CreateTaskRequest) (*pb.TaskIDResponse, error) {
@@ -132,8 +169,14 @@ func (tm *TaskManager) CreateTask(ctx context.Context, rq *pb.CreateTaskRequest)
 	}
 
 	id, err := tm.service.Create(rq.GetTitle(), rq.GetDescription())
-	if err != nil && err == EmptyTitle {
+	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	tm.taskEvents <- &pb.TaskEvent{
+		Type:      pb.TaskEventType_TASK_EVENT_TYPE_CREATED,
+		TaskId:    id,
+		Timestamp: timestamppb.Now(),
 	}
 
 	return &pb.TaskIDResponse{Id: id}, nil
@@ -198,8 +241,17 @@ func (tm *TaskManager) CompleteTask(ctx context.Context, in *pb.TaskIDRequest) (
 	}
 
 	err := tm.service.Complete(in.GetId())
-	if err != nil && err == TaskNotFound {
-		return nil, status.Error(codes.NotFound, err.Error())
+	if err != nil {
+		if err == TaskNotFound {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	tm.taskEvents <- &pb.TaskEvent{
+		Type:      pb.TaskEventType_TASK_EVENT_TYPE_COMPLETED,
+		TaskId:    in.GetId(),
+		Timestamp: timestamppb.Now(),
 	}
 
 	return &emptypb.Empty{}, nil
@@ -215,8 +267,17 @@ func (tm *TaskManager) DeleteTask(ctx context.Context, in *pb.TaskIDRequest) (*e
 	}
 
 	err := tm.service.Delete(in.GetId())
-	if err != nil && err == TaskNotFound {
-		return nil, status.Error(codes.NotFound, err.Error())
+	if err != nil {
+		if err == TaskNotFound {
+			return nil, status.Error(codes.NotFound, err.Error())
+		}
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+
+	tm.taskEvents <- &pb.TaskEvent{
+		Type:      pb.TaskEventType_TASK_EVENT_TYPE_DELETED,
+		TaskId:    in.GetId(),
+		Timestamp: timestamppb.Now(),
 	}
 
 	return &emptypb.Empty{}, nil
@@ -226,14 +287,26 @@ func (tm *TaskManager) WatchTaskEvents(req *pb.SubscribeRequest, stream pb.TaskM
 	clientName := req.GetName()
 	log.Printf("Client '%s' requested connection", clientName)
 
-	// TODO add name to the list
+	subscriber := newTaskEventSubscriber()
+	tm.clients.Store(clientName, subscriber)
 
 	defer func() {
-		// TODO remove name from the list
+		tm.clients.CompareAndDelete(clientName, subscriber)
 	}()
 
-	<-stream.Context().Done()
-	return stream.Context().Err()
+	for {
+		select {
+		case event := <-subscriber.events:
+			if err := stream.Send(event); err != nil {
+				log.Printf("failed to send task event to client %q: %v", clientName, err)
+				return err
+			}
+		case <-subscriber.done:
+			return status.Error(codes.ResourceExhausted, "subscriber event queue is full")
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
 }
 
 func main() {
@@ -249,9 +322,28 @@ func main() {
 			index: 0,
 			tasks: make(map[string]*Task),
 		},
+		taskEvents: make(chan *pb.TaskEvent, 10),
 	}
 	pb.RegisterTaskManagerServer(server, &tm)
 	log.Printf("Server listening at %v", listener.Addr())
+
+	go func() {
+		for event := range tm.taskEvents {
+			tm.clients.Range(func(clientName, client any) bool {
+				subscriber, ok := client.(*taskEventSubscriber)
+				if !ok {
+					tm.clients.Delete(clientName)
+					return true
+				}
+
+				if !subscriber.enqueue(event) {
+					log.Printf("disconnecting slow client %q: event queue is full", clientName)
+					tm.clients.CompareAndDelete(clientName, subscriber)
+				}
+				return true
+			})
+		}
+	}()
 
 	if err := server.Serve(listener); err != nil {
 		log.Fatalf("failed to serve: %v", err)

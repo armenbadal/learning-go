@@ -7,17 +7,30 @@ tasks:
 
   proto:
     desc: Generate Go code from the protobuf definitions
+    sources:
+      - proto/etasks.proto
+    generates:
+      - gen/etasks/etasks.pb.go
+      - gen/etasks/etasks_grpc.pb.go
     cmds:
       - protoc --proto_path=proto --go_out=gen/etasks --go_opt=paths=source_relative --go-grpc_out=gen/etasks --go-grpc_opt=paths=source_relative proto/etasks.proto
 
   build-server:
     desc: Build the task manager server
     deps: [proto]
+    sources:
+      - server/server.go
+    generates:
+      - bin/server
     cmds:
-      - go build ./server
+      - go build -o bin/server ./server
 
   build-client:
     desc: Build the task manager client
     deps: [proto]
+    sources:
+      - client/client.go
+    generates:
+      - bin/client
     cmds:
-      - go build ./client
+      - go build -o bin/client ./client

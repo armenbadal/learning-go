@@ -10,10 +10,36 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+func TestTaskEventSubscriberDisconnectsWhenQueueIsFull(t *testing.T) {
+	subscriber := newTaskEventSubscriber()
+	event := &pb.TaskEvent{TaskId: "TASK-1"}
+
+	for range subscriberQueueSize {
+		if !subscriber.enqueue(event) {
+			t.Fatal("enqueue() unexpectedly rejected an event before the queue was full")
+		}
+	}
+
+	if subscriber.enqueue(event) {
+		t.Fatal("enqueue() accepted an event after the queue was full")
+	}
+
+	select {
+	case <-subscriber.done:
+	default:
+		t.Fatal("subscriber done channel was not signaled after queue overflow")
+	}
+
+	if subscriber.enqueue(event) {
+		t.Fatal("enqueue() accepted an event after the subscriber was stopped")
+	}
+}
+
 func TestCreateTask(t *testing.T) {
 	newTaskManager := func() *TaskManager {
 		return &TaskManager{
-			service: &TaskService{tasks: make(map[string]*Task)},
+			service:    &TaskService{tasks: make(map[string]*Task)},
+			taskEvents: make(chan *pb.TaskEvent, 10),
 		}
 	}
 
