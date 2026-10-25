@@ -69,7 +69,8 @@ func (t *TaskService) Get(id string) (*Task, error) {
 		return nil, TaskNotFound
 	}
 
-	return task, nil
+	taskCopy := *task
+	return &taskCopy, nil
 }
 
 func (t *TaskService) List() ([]*Task, error) {
@@ -78,7 +79,8 @@ func (t *TaskService) List() ([]*Task, error) {
 
 	var tasks []*Task
 	for _, task := range t.tasks {
-		tasks = append(tasks, task)
+		taskCopy := *task
+		tasks = append(tasks, &taskCopy)
 	}
 
 	return tasks, nil
