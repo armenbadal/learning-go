@@ -2,59 +2,64 @@ package main
 
 import (
 	"context"
-	pb "echat/gen/echat"
+	"fmt"
 	"log"
 	"net"
 	"sync"
 
+	pb "echat/gen/echat"
+
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 )
 
 type ChatRoom struct {
-	mx sync.Mutex
+	mx      sync.Mutex
 	clients map[string]*participant
 	pb.UnimplementedChatRoomServer
 }
 
 type participant struct {
-	mx sync.Mutex
 	messages chan *pb.TextFromResponse
 }
 
-func (cr *ChatRoom) RegisterMe(ctx context.Context, name *wrapperspb.StringValue) (*wrapperspb.BoolValue, error) {
+func (cr *ChatRoom) RegisterMe(ctx context.Context, name *wrapperspb.StringValue) (*emptypb.Empty, error) {
 	cr.mx.Lock()
 	defer cr.mx.Unlock()
 
-	cr.clients[name.Value]= &participant{
+	cr.clients[name.Value] = &participant{
 		messages: make(chan *pb.TextFromResponse, 4),
 	}
 	log.Printf("New participant registered: '%s'", name.Value)
 
-	return &wrapperspb.BoolValue{Value: true}, nil
+	return &emptypb.Empty{}, nil
 }
 
-func (cr *ChatRoom) DeregisterMe(ctx context.Context, name *wrapperspb.StringValue) (*wrapperspb.BoolValue, error) {
+func (cr *ChatRoom) DeregisterMe(ctx context.Context, name *wrapperspb.StringValue) (*emptypb.Empty, error) {
 	cr.mx.Lock()
 	defer cr.mx.Unlock()
 
 	delete(cr.clients, name.Value)
 
-	return &wrapperspb.BoolValue{Value: true}, nil
+	return &emptypb.Empty{}, nil
 }
 
-func (cr *ChatRoom) TextTo(ctx context.Context, request *pb.TextToRequest) (*wrapperspb.BoolValue, error) {
+func (cr *ChatRoom) TextTo(ctx context.Context, request *pb.TextToRequest) (*emptypb.Empty, error) {
 	cr.mx.Lock()
 	defer cr.mx.Unlock()
 
-	from, to, text := request.GetFrom(), request.GetTo(), request.GetText()
 	message := &pb.TextFromResponse{
-		From: from,
-		Text: text,
+		From: request.GetFrom(),
+		Text: request.GetText(),
 	}
-	cr.clients[to].messages <- message
+	if participant, ok := cr.clients[request.GetTo()]; ok {
+		participant.messages <- message
+	} else {
+		return &emptypb.Empty{}, fmt.Errorf("participant %q not registered", request.GetTo())
+	}
 
-	return &wrapperspb.BoolValue{Value: true}, nil
+	return &emptypb.Empty{}, nil
 }
 
 func (cr *ChatRoom) TextFrom(name *wrapperspb.StringValue, stream pb.ChatRoom_TextFromServer) error {
@@ -69,8 +74,6 @@ func (cr *ChatRoom) TextFrom(name *wrapperspb.StringValue, stream pb.ChatRoom_Te
 			return stream.Context().Err()
 		}
 	}
-
-	return nil
 }
 
 func main() {
@@ -91,4 +94,3 @@ func main() {
 		log.Fatalf("failed to serve: %v", err)
 	}
 }
-

@@ -2,6 +2,7 @@ syntax = "proto3";
 
 option go_package = "echat/gen/echat";
 
+import "google/protobuf/empty.proto";
 import "google/protobuf/wrappers.proto";
 
 message TextToRequest {
@@ -16,9 +17,9 @@ message TextFromResponse {
 }
 
 service ChatRoom {
-  rpc RegisterMe(google.protobuf.StringValue) returns (google.protobuf.BoolValue);
-  rpc DeregisterMe(google.protobuf.StringValue) returns (google.protobuf.BoolValue);
-  rpc TextTo(TextToRequest) returns (google.protobuf.BoolValue);
+  rpc RegisterMe(google.protobuf.StringValue) returns (google.protobuf.Empty);
+  rpc DeregisterMe(google.protobuf.StringValue) returns (google.protobuf.Empty);
+  rpc TextTo(TextToRequest) returns (google.protobuf.Empty);
   rpc TextFrom(google.protobuf.StringValue) returns (stream TextFromResponse);
 }
 

@@ -16,21 +16,21 @@ tasks:
       - protoc --proto_path=proto --go_out=gen/echat --go_opt=paths=source_relative --go-grpc_out=gen/echat --go-grpc_opt=paths=source_relative proto/echat.proto
 
   build-server:
-    desc: Build the task manager server
+    desc: Build chat server
     deps: [proto]
     sources:
       - server/main.go
     generates:
-      - bin/server.exe
+      - bin/server{{exeExt}}
     cmds:
-      - go build -o bin/server.exe ./server
+      - go build -o bin/server{{exeExt}} ./server
 
   build-client:
-    desc: Build the task manager client
+    desc: Build chat client
     deps: [proto]
     sources:
       - client/main.go
     generates:
-      - bin/client.exe
+      - bin/client{{exeExt}}
     cmds:
-      - go build -o bin/client.exe ./client
+      - go build -o bin/client{{exeExt}} ./client

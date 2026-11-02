@@ -36,11 +36,10 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	r, err := client.RegisterMe(ctx, &wrapperspb.StringValue{Value: *name})
+	_, err = client.RegisterMe(ctx, &wrapperspb.StringValue{Value: *name})
 	if err != nil {
 		log.Fatal("failed to register")
 	}
-	fmt.Printf("|> %t\n", r.Value)
 
 	req := &wrapperspb.StringValue{Value: *name}
 	stream, err := client.TextFrom(ctx, req)
@@ -62,37 +61,36 @@ func main() {
 		}
 	}()
 
-
 	// sending loop
 	scanner := bufio.NewScanner(os.Stdin)
 	for {
-		var to, text string
-		fmt.Print("TO: ")
-		if scanner.Scan() {
-			to = scanner.Text()
-		}
-		if err := scanner.Err(); err != nil {
-			continue
-		}
-
-		fmt.Print("TEXT: ")
-		if scanner.Scan() {
-			text = scanner.Text()
-		}
-		if err := scanner.Err(); err != nil {
+		to, text, err := readInput(scanner)
+		if err != nil {
+			log.Println("invalid input format")
 			continue
 		}
 
 		msg := &pb.TextToRequest{
 			From: *name,
-			To: to,
+			To:   to,
 			Text: text,
 		}
-		r, err := client.TextTo(ctx, msg)
+		_, err = client.TextTo(ctx, msg)
 		if err != nil {
-			log.Println("message sending failed")
+			log.Printf("message sending failed: %v", err)
 			continue
 		}
-		fmt.Printf("|> %t\n", r.Value)
 	}
+}
+
+func readInput(scanner *bufio.Scanner) (string, string, error) {
+	if scanner.Scan() {
+		line := scanner.Text()
+		from, text, found := strings.Cut(line, ">")
+		if !found {
+			return "", "", fmt.Errorf("invalid input format")
+		}
+		return from, text, scanner.Err()
+	}
+	return "", "", scanner.Err()
 }
