@@ -1,0 +1,36 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Generate protobuf code and build the server and client
+    deps: [proto, build-server, build-client]
+
+  proto:
+    desc: Generate Go code from the protobuf definitions
+    sources:
+      - proto/echat.proto
+    generates:
+      - gen/echat/echat.pb.go
+      - gen/echat/echat_grpc.pb.go
+    cmds:
+      - protoc --proto_path=proto --go_out=gen/echat --go_opt=paths=source_relative --go-grpc_out=gen/echat --go-grpc_opt=paths=source_relative proto/echat.proto
+
+  build-server:
+    desc: Build the task manager server
+    deps: [proto]
+    sources:
+      - server/main.go
+    generates:
+      - bin/server.exe
+    cmds:
+      - go build -o bin/server.exe ./server
+
+  build-client:
+    desc: Build the task manager client
+    deps: [proto]
+    sources:
+      - client/main.go
+    generates:
+      - bin/client.exe
+    cmds:
+      - go build -o bin/client.exe ./client

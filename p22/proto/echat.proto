@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+option go_package = "echat/gen/echat";
+
+import "google/protobuf/wrappers.proto";
+
+message TextToRequest {
+  string from = 1;
+  string to = 2;
+  string text = 3;
+}
+
+message TextFromResponse {
+  string from = 1;
+  string text = 2;
+}
+
+service ChatRoom {
+  rpc RegisterMe(google.protobuf.StringValue) returns (google.protobuf.BoolValue);
+  rpc DeregisterMe(google.protobuf.StringValue) returns (google.protobuf.BoolValue);
+  rpc TextTo(TextToRequest) returns (google.protobuf.BoolValue);
+  rpc TextFrom(google.protobuf.StringValue) returns (stream TextFromResponse);
+}
+
